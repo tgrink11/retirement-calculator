@@ -17,12 +17,14 @@ import { PortfolioPieChart } from './components/charts/PortfolioPieChart';
 import { YearByYearTable } from './components/results/YearByYearTable';
 import { AssumptionsSummary } from './components/results/AssumptionsSummary';
 import { EmailGate } from './components/EmailGate';
+import { Guide } from './components/layout/Guide';
 
 function AppContent() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Header />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <Guide />
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Input Panel — always visible */}
           <div className="lg:col-span-4 space-y-4">
