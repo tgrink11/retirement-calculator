@@ -67,4 +67,8 @@
     max-width: 100% !important;
   }
 
+  /* Show print-only elements (logo header, disclaimer) */
+  .print\:block {
+    display: block !important;
+  }
 }
