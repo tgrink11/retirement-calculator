@@ -40,9 +40,11 @@ function AppContent() {
           {/* Results Panel */}
           <div className="lg:col-span-8 space-y-6">
             {/* Print-only header with logo — hidden on screen */}
-            <div className="hidden print:block text-center mb-2">
-              <img src="/logo.png" alt="Best of US Investors" className="mx-auto h-16 mb-2" />
-              <p className="text-sm text-slate-500">Retirement Calculator Report</p>
+            <div className="hidden print:block mb-4">
+              <div className="flex items-center gap-3">
+                <img src="/logo.png" alt="Best of US Investors" className="h-12" />
+                <p className="text-sm text-slate-500">Retirement Calculator Report</p>
+              </div>
             </div>
 
             {/* Teaser — always visible */}
