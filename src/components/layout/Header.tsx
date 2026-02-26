@@ -4,7 +4,7 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <img src="/logo.png" alt="Best of US Investors" className="h-10" />
+            <img src="/logo.png" alt="Best of US Investors" className="h-[46px]" />
             <div>
               <h1 className="text-xl font-bold text-slate-900">
                 Retirement Calculator
