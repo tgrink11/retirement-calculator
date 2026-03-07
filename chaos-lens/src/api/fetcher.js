@@ -188,6 +188,42 @@ export async function fetchCommodityData(symbol) {
   return results;
 }
 
+/**
+ * Fetch index data (VIX, etc.) from FMP
+ * FMP uses ^VIX format for indices. No intraday available for indices.
+ */
+export async function fetchIndexData(symbol) {
+  const results = { daily: null, hourly: null, fiveMin: null, quote: null };
+
+  // FMP uses ^PREFIX format for indices (e.g. VIX → ^VIX)
+  const fmpSymbol = symbol.startsWith('^') ? symbol : `^${symbol}`;
+  const encodedSymbol = encodeURIComponent(fmpSymbol);
+
+  const [dailyRes, quoteRes] = await Promise.allSettled([
+    // Daily — last 2 years from FMP
+    fetchJSON(`/api/fmp?path=v3/historical-price-full/${encodedSymbol}&from=${getDateStr(-730)}&to=${getDateStr(0)}`),
+    // Live quote
+    fetchJSON(`/api/fmp?path=v3/quote/${encodedSymbol}`),
+  ]);
+
+  // Daily
+  if (dailyRes.status === 'fulfilled') {
+    const data = dailyRes.value;
+    const historical = data?.historical || data;
+    if (Array.isArray(historical)) {
+      results.daily = normalizeOHLCV(historical);
+    }
+  }
+
+  // Quote
+  if (quoteRes.status === 'fulfilled') {
+    const data = quoteRes.value;
+    results.quote = Array.isArray(data) ? data[0] : data;
+  }
+
+  return results;
+}
+
 function getDateStr(daysOffset) {
   const d = new Date();
   d.setDate(d.getDate() + daysOffset);

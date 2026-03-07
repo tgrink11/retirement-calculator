@@ -7,13 +7,18 @@ import PredictionPanel from './components/PredictionPanel';
 import AnalysisNarrative from './components/AnalysisNarrative';
 import HistoricalAnalogs from './components/HistoricalAnalogs';
 import TimeframeChart from './components/TimeframeChart';
-import { fetchStockData, fetchBondData, fetchCommodityData } from './api/fetcher';
+import { fetchStockData, fetchBondData, fetchCommodityData, fetchIndexData } from './api/fetcher';
 import { getAnalysis } from './api/claude';
 import { runFractalAnalysis } from './engine/fractals';
 import { runBehavioralAnalysis } from './engine/behavioral';
 import { classifyMood } from './engine/mood';
-import { predictBreak } from './engine/prediction';
+import { predictBreak, predictHorizons } from './engine/prediction';
 import { findAnalogs } from './engine/analogs';
+import DirectionalOutlook from './components/DirectionalOutlook';
+import PrintButton from './components/PrintButton';
+import BacktestResults from './components/BacktestResults';
+import Guide from './components/Guide';
+import { runBacktestAsync } from './engine/backtest';
 
 export default function App() {
   const [loading, setLoading] = useState(false);
@@ -21,6 +26,10 @@ export default function App() {
   const [symbol, setSymbol] = useState('');
   const [assetType, setAssetType] = useState('');
   const [results, setResults] = useState(null);
+  const [backtestResult, setBacktestResult] = useState(null);
+  const [backtestLoading, setBacktestLoading] = useState(false);
+  const [backtestProgress, setBacktestProgress] = useState(0);
+  const [showGuide, setShowGuide] = useState(false);
 
   const handleAnalyze = useCallback(async (sym, type) => {
     setLoading(true);
@@ -28,6 +37,9 @@ export default function App() {
     setSymbol(sym);
     setAssetType(type);
     setResults(null);
+    setBacktestResult(null);
+    setBacktestLoading(false);
+    setBacktestProgress(0);
 
     try {
       // Step 1: Fetch data
@@ -35,6 +47,8 @@ export default function App() {
 
       if (type === 'stock') {
         rawData = await fetchStockData(sym);
+      } else if (type === 'index') {
+        rawData = await fetchIndexData(sym);
       } else if (type === 'bond') {
         const bondData = await fetchBondData();
         rawData = { daily: bondData.daily, hourly: null, fiveMin: null, quote: null };
@@ -57,11 +71,11 @@ export default function App() {
       // Step 3: Run behavioral analysis
       const behavioralResults = runBehavioralAnalysis(rawData.daily, type, yieldData);
 
-      // Step 4: Classify mood
-      const moodResult = classifyMood(fractalResults, behavioralResults);
+      // Step 4: Classify mood (pass daily closes for recent-regime detection)
+      const moodResult = classifyMood(fractalResults, behavioralResults, rawData.daily.close);
 
-      // Step 5: Predict next break
-      const predictionResult = predictBreak(fractalResults, behavioralResults, moodResult);
+      // Step 5: Predict next break (pass daily closes for directional awareness)
+      const predictionResult = predictBreak(fractalResults, behavioralResults, moodResult, rawData.daily.close);
 
       // Step 6: Find historical analogs
       const currentSignature = {
@@ -71,6 +85,9 @@ export default function App() {
       };
       const analogResults = findAnalogs(rawData.daily.close, currentSignature);
 
+      // Step 7: Predict directional horizons (15-day, 62-day)
+      const horizonResults = predictHorizons(fractalResults, behavioralResults, moodResult, analogResults, rawData.daily.close);
+
       // Set results immediately (before Claude call)
       const partialResults = {
         fractalResults,
@@ -78,12 +95,22 @@ export default function App() {
         moodResult,
         predictionResult,
         analogResults,
+        horizonResults,
         analysis: { text: null, model: null, error: null, loading: true },
         quote: rawData.quote,
       };
       setResults(partialResults);
 
-      // Step 7: Get Claude AI analysis (async, update when ready)
+      // Step 8: Launch walk-forward backtest (async, non-blocking)
+      setBacktestLoading(true);
+      runBacktestAsync(rawData.daily, type, yieldData, {
+        onProgress: (pct) => setBacktestProgress(pct),
+      }).then(result => {
+        setBacktestResult(result);
+        setBacktestLoading(false);
+      });
+
+      // Step 9: Get Claude AI analysis (async, update when ready)
       const analysis = await getAnalysis(
         sym, type, fractalResults, behavioralResults, moodResult, predictionResult, analogResults
       );
@@ -108,39 +135,53 @@ export default function App() {
             <div>
               <h1 className="text-3xl font-bold font-mono tracking-tight">
                 <span className="text-fractal-cyan">Chaos</span>
-                <span className="text-gray-100"> Lens</span>
+                <span className="text-gray-100"> Report</span>
               </h1>
-              <p className="text-sm text-gray-500 mt-1">Fractal Geometry Market Analyzer</p>
+              <p className="text-sm text-gray-500 mt-1">15 to 62 Day Insights of Price Movement</p>
+              <button
+                onClick={() => setShowGuide(g => !g)}
+                className="text-xs text-fractal-cyan hover:text-cyan-400 mt-1 no-print"
+              >
+                {showGuide ? 'Close Guide' : 'Read the Guide'}
+              </button>
             </div>
             {symbol && (
-              <div className="text-right">
-                <div className="text-xl font-mono font-bold text-gray-200">{symbol}</div>
-                <div className="text-xs text-gray-500 uppercase">{assetType}</div>
-                {results?.quote && (
-                  <div className="text-sm font-mono mt-0.5">
-                    <span className="text-gray-300">${results.quote.price?.toFixed(2)}</span>
-                    {results.quote.changesPercentage != null && (
-                      <span className={`ml-2 ${results.quote.changesPercentage >= 0 ? 'text-fractal-green' : 'text-fractal-red'}`}>
-                        {results.quote.changesPercentage >= 0 ? '+' : ''}{results.quote.changesPercentage?.toFixed(2)}%
-                      </span>
-                    )}
-                  </div>
-                )}
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <div className="text-xl font-mono font-bold text-gray-200">{symbol}</div>
+                  <div className="text-xs text-gray-500 uppercase">{assetType}</div>
+                  {results?.quote && (
+                    <div className="text-sm font-mono mt-0.5">
+                      <span className="text-gray-300">${results.quote.price?.toFixed(2)}</span>
+                      {results.quote.changesPercentage != null && (
+                        <span className={`ml-2 ${results.quote.changesPercentage >= 0 ? 'text-fractal-green' : 'text-fractal-red'}`}>
+                          {results.quote.changesPercentage >= 0 ? '+' : ''}{results.quote.changesPercentage?.toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {results && <PrintButton />}
               </div>
             )}
           </div>
         </div>
       </header>
 
+      {/* Guide page */}
+      {showGuide && <Guide onBack={() => setShowGuide(false)} />}
+
       {/* Search */}
-      <section className="py-8">
-        <div className="max-w-6xl mx-auto px-4">
-          <SearchBar onAnalyze={handleAnalyze} loading={loading} />
-        </div>
-      </section>
+      {!showGuide && (
+        <section className="py-8 no-print">
+          <div className="max-w-6xl mx-auto px-4">
+            <SearchBar onAnalyze={handleAnalyze} loading={loading} />
+          </div>
+        </section>
+      )}
 
       {/* Error */}
-      {error && (
+      {!showGuide && error && (
         <div className="max-w-6xl mx-auto px-4 mb-6">
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-fractal-red text-sm">
             {error}
@@ -149,7 +190,7 @@ export default function App() {
       )}
 
       {/* Loading state */}
-      {loading && !results && (
+      {!showGuide && loading && !results && (
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center py-20">
             <div className="inline-flex items-center gap-3 text-fractal-cyan">
@@ -165,8 +206,11 @@ export default function App() {
       )}
 
       {/* Results */}
-      {results && (
+      {!showGuide && results && (
         <div className="max-w-6xl mx-auto px-4 pb-16 space-y-6">
+          {/* Directional Outlook — plain-English summary for novice investors */}
+          <DirectionalOutlook horizons={results.horizonResults} symbol={symbol} />
+
           {/* Row 1: Fractal Metrics + Mood */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <FractalMetrics fractalResults={results.fractalResults} />
@@ -188,20 +232,28 @@ export default function App() {
           {/* Row 5: AI Analysis */}
           <AnalysisNarrative analysis={results.analysis} />
 
+          {/* Row 6: Backtest Results */}
+          <BacktestResults
+            backtestResult={backtestResult}
+            symbol={symbol}
+            loading={backtestLoading}
+            progress={backtestProgress}
+          />
+
           {/* Footer disclaimer */}
           <div className="text-center text-xs text-gray-600 pt-4 border-t border-chaos-700">
-            Chaos Lens uses fractal geometry for educational analysis only. Not financial advice. Past fractal patterns do not guarantee future results.
+            Chaos Report uses fractal geometry for educational analysis only. Not financial advice. Past fractal patterns do not guarantee future results.
           </div>
         </div>
       )}
 
       {/* Empty state */}
-      {!loading && !results && !error && (
+      {!showGuide && !loading && !results && !error && (
         <div className="max-w-6xl mx-auto px-4 text-center py-20">
           <div className="text-6xl mb-4 opacity-20">◇</div>
           <h2 className="text-xl text-gray-400 font-mono">Enter a ticker to begin fractal analysis</h2>
           <p className="text-sm text-gray-600 mt-2 max-w-md mx-auto">
-            Chaos Lens computes Hurst exponents, box-counting dimensions, and lacunarity
+            Chaos Report computes Hurst exponents, box-counting dimensions, and lacunarity
             across daily, hourly, and 5-minute timeframes to decode market psychology.
           </p>
         </div>
