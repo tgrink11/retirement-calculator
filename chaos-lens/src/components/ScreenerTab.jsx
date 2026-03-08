@@ -1,9 +1,41 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { fetchScreenerList, fetchDailyOnly } from '../api/fetcher';
 import { computeOpportunityScore, rankOpportunities } from '../engine/screener';
 
 const BATCH_SIZE = 10;
 const BATCH_DELAY = 250; // ms between batches
+
+const CACHE_KEY = 'chaos_screener_cache';
+
+function getCachedResults() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    const today = new Date().toISOString().split('T')[0];
+    if (cached.date === today && Array.isArray(cached.results) && cached.results.length > 0) {
+      return cached;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedResults(results) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      date: new Date().toISOString().split('T')[0],
+      scannedAt: new Date().toISOString(),
+      results,
+    }));
+  } catch { /* localStorage full — ignore */ }
+}
+
+const DIR_COLORS = {
+  Long: 'text-fractal-green',
+  Short: 'text-fractal-red',
+};
 
 const MOOD_COLORS = {
   PANIC: 'text-fractal-red',
@@ -46,6 +78,7 @@ export default function ScreenerTab({ onSelectSymbol }) {
   const [sortDir, setSortDir] = useState('desc');
   const [failed, setFailed] = useState(0);
   const abortRef = useRef(false);
+  const hasInitialized = useRef(false);
 
   const handleScan = useCallback(async () => {
     setScanning(true);
@@ -120,12 +153,28 @@ export default function ScreenerTab({ onSelectSymbol }) {
       const top20 = rankOpportunities(scored, 20);
       setResults(top20);
       setLastScanned(new Date());
+      setCachedResults(top20);
     } catch (e) {
       setError(e.message);
     } finally {
       setScanning(false);
     }
   }, []);
+
+  // On mount: load cached results or auto-start scan
+  useEffect(() => {
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
+
+    const cached = getCachedResults();
+    if (cached) {
+      setResults(cached.results);
+      setLastScanned(new Date(cached.scannedAt));
+    } else {
+      // No cache for today — auto-execute scan
+      handleScan();
+    }
+  }, [handleScan]);
 
   const handleStop = useCallback(() => {
     abortRef.current = true;
@@ -253,6 +302,7 @@ export default function ScreenerTab({ onSelectSymbol }) {
                   {[
                     { key: 'score', label: '#' },
                     { key: 'symbol', label: 'Symbol' },
+                    { key: 'direction', label: 'Dir' },
                     { key: 'sector', label: 'Sector' },
                     { key: 'price', label: 'Price' },
                     { key: 'changePercent', label: 'Chg%' },
@@ -260,6 +310,7 @@ export default function ScreenerTab({ onSelectSymbol }) {
                     { key: 'H', label: 'Hurst' },
                     { key: 'D', label: 'BoxDim' },
                     { key: 'lambda', label: 'Lacun' },
+                    { key: 'momentum', label: 'Mom%' },
                     { key: 'mood', label: 'Mood' },
                     { key: 'prediction', label: 'Prediction' },
                     { key: 'predConfidence', label: 'Conf%' },
@@ -289,6 +340,9 @@ export default function ScreenerTab({ onSelectSymbol }) {
                       <div className="font-mono font-bold text-fractal-cyan">{r.symbol}</div>
                       <div className="text-xs text-gray-500 truncate max-w-[140px]">{r.name}</div>
                     </td>
+                    <td className={`px-3 py-3 font-mono font-bold text-xs ${DIR_COLORS[r.direction] || 'text-gray-400'}`}>
+                      {r.direction}
+                    </td>
                     <td className="px-3 py-3 text-gray-400 text-xs">{r.sector}</td>
                     <td className="px-3 py-3 text-gray-300 font-mono">
                       {safeNum(r.price) ? `$${safeNum(r.price)}` : '—'}
@@ -306,6 +360,11 @@ export default function ScreenerTab({ onSelectSymbol }) {
                     <td className="px-3 py-3 font-mono text-gray-300">{safeNum(r.H) ?? '—'}</td>
                     <td className="px-3 py-3 font-mono text-gray-300">{safeNum(r.D) ?? '—'}</td>
                     <td className="px-3 py-3 font-mono text-gray-300">{safeNum(r.lambda) ?? '—'}</td>
+                    <td className={`px-3 py-3 font-mono ${
+                      r.momentum > 0 ? 'text-fractal-green' : r.momentum < 0 ? 'text-fractal-red' : 'text-gray-400'
+                    }`}>
+                      {safeNum(r.momentum) != null ? `${r.momentum >= 0 ? '+' : ''}${safeNum(r.momentum)}%` : '—'}
+                    </td>
                     <td className={`px-3 py-3 font-semibold text-xs ${MOOD_COLORS[r.mood] || 'text-gray-400'}`}>
                       {MOOD_LABELS[r.mood] || r.mood}
                     </td>

@@ -53,6 +53,16 @@ export function computeOpportunityScore(dailyOHLCV) {
   const prediction = (typeof predObj === 'string' ? predObj : predObj?.key) ?? 'CONSOLIDATION';
   const predConfidence = predictionResult?.confidence ?? 0;
 
+  // Compute recent momentum (20-day return %)
+  const closes = dailyOHLCV.close;
+  const len = closes.length;
+  const momentum20 = len >= 20
+    ? ((closes[len - 1] - closes[len - 20]) / closes[len - 20]) * 100
+    : 0;
+
+  // Classify direction: Long or Short
+  const direction = classifyDirection(prediction, momentum20);
+
   // Compute composite opportunity score (0-100)
   const score = computeComposite(H, D, L, greed, fear, exhaustion, prediction, predConfidence);
 
@@ -68,7 +78,20 @@ export function computeOpportunityScore(dailyOHLCV) {
     prediction,
     predConfidence: Math.round(predConfidence),
     score: Math.round(score),
+    direction,
+    momentum: Math.round(momentum20 * 100) / 100,
   };
+}
+
+/**
+ * Classify trade direction based on prediction and recent momentum.
+ * THRUST_UP → Long, CASCADE_DOWN → Short, CONSOLIDATION → use momentum.
+ */
+function classifyDirection(prediction, momentum20) {
+  if (prediction === 'THRUST_UP') return 'Long';
+  if (prediction === 'CASCADE_DOWN') return 'Short';
+  // CONSOLIDATION — use 20-day momentum to decide
+  return momentum20 >= 0 ? 'Long' : 'Short';
 }
 
 /**
