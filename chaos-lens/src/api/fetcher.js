@@ -260,6 +260,34 @@ export async function fetchDailyOnly(symbol) {
   return { daily, quote };
 }
 
+/**
+ * Fetch cached screener results from Supabase (via serverless endpoint)
+ * Returns { results, scannedAt, date } or { results: null }
+ */
+export async function fetchScreenerCache() {
+  try {
+    return await fetchJSON('/api/screener-cache');
+  } catch {
+    return { results: null };
+  }
+}
+
+/**
+ * Save screener results to Supabase cache
+ */
+export async function saveScreenerCache(results) {
+  try {
+    const resp = await fetch('/api/screener-cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results }),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 function getDateStr(daysOffset) {
   const d = new Date();
   d.setDate(d.getDate() + daysOffset);

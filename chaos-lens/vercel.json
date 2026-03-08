@@ -8,6 +8,7 @@
     "api/fred.js": { "maxDuration": 10 },
     "api/twelvedata.js": { "maxDuration": 15 },
     "api/emails.js": { "maxDuration": 10 },
-    "api/screener-list.js": { "maxDuration": 30 }
+    "api/screener-list.js": { "maxDuration": 30 },
+    "api/screener-cache.js": { "maxDuration": 10 }
   }
 }

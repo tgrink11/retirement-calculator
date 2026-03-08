@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { fetchScreenerList, fetchDailyOnly } from '../api/fetcher';
+import { fetchScreenerList, fetchDailyOnly, fetchScreenerCache, saveScreenerCache } from '../api/fetcher';
 import { computeOpportunityScore, rankOpportunities } from '../engine/screener';
 
 const BATCH_SIZE = 10;
@@ -154,6 +154,8 @@ export default function ScreenerTab({ onSelectSymbol }) {
       setResults(top20);
       setLastScanned(new Date());
       setCachedResults(top20);
+      // Save to Supabase (shared across all users)
+      saveScreenerCache(top20).catch(() => {});
     } catch (e) {
       setError(e.message);
     } finally {
@@ -161,19 +163,36 @@ export default function ScreenerTab({ onSelectSymbol }) {
     }
   }, []);
 
-  // On mount: load cached results or auto-start scan
+  // On mount: check Supabase cache → localStorage fallback → auto-scan
   useEffect(() => {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
 
-    const cached = getCachedResults();
-    if (cached) {
-      setResults(cached.results);
-      setLastScanned(new Date(cached.scannedAt));
-    } else {
-      // No cache for today — auto-execute scan
-      handleScan();
+    // Try localStorage first (instant), then Supabase (shared across users)
+    const localCached = getCachedResults();
+    if (localCached) {
+      setResults(localCached.results);
+      setLastScanned(new Date(localCached.scannedAt));
+      return;
     }
+
+    // Check Supabase for server-side cache (shared across all users)
+    fetchScreenerCache()
+      .then(({ results: serverResults, scannedAt }) => {
+        if (serverResults && serverResults.length > 0) {
+          setResults(serverResults);
+          setLastScanned(new Date(scannedAt));
+          // Also save to localStorage for instant access next time
+          setCachedResults(serverResults);
+        } else {
+          // No cache anywhere — auto-execute scan
+          handleScan();
+        }
+      })
+      .catch(() => {
+        // Supabase unavailable — auto-execute scan
+        handleScan();
+      });
   }, [handleScan]);
 
   const handleStop = useCallback(() => {
