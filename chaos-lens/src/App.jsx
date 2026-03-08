@@ -18,9 +18,15 @@ import DirectionalOutlook from './components/DirectionalOutlook';
 import PrintButton from './components/PrintButton';
 import BacktestResults from './components/BacktestResults';
 import Guide from './components/Guide';
+import EmailGate from './components/EmailGate';
+import ScreenerTab from './components/ScreenerTab';
 import { runBacktestAsync } from './engine/backtest';
 
 export default function App() {
+  const [emailUnlocked, setEmailUnlocked] = useState(
+    () => !!localStorage.getItem('chaos_report_email')
+  );
+  const [activeTab, setActiveTab] = useState('stock');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [symbol, setSymbol] = useState('');
@@ -126,6 +132,23 @@ export default function App() {
     }
   }, []);
 
+  // When screener row is clicked, switch to stock tab and analyze
+  const handleScreenerSelect = useCallback((sym) => {
+    setActiveTab('stock');
+    handleAnalyze(sym, 'stock');
+  }, [handleAnalyze]);
+
+  const handleTabChange = useCallback((tab) => {
+    setActiveTab(tab);
+  }, []);
+
+  // Email gate — blocks entire app until email submitted
+  if (!emailUnlocked) {
+    return <EmailGate onUnlocked={() => setEmailUnlocked(true)} />;
+  }
+
+  const isScreener = activeTab === 'screener';
+
   return (
     <div className="min-h-screen bg-chaos-900">
       {/* Header */}
@@ -145,7 +168,7 @@ export default function App() {
                 {showGuide ? 'Close Guide' : 'Read the Guide'}
               </button>
             </div>
-            {symbol && (
+            {symbol && !isScreener && (
               <div className="flex items-center gap-4">
                 <div className="text-right">
                   <div className="text-xl font-mono font-bold text-gray-200">{symbol}</div>
@@ -171,17 +194,24 @@ export default function App() {
       {/* Guide page */}
       {showGuide && <Guide onBack={() => setShowGuide(false)} />}
 
-      {/* Search */}
+      {/* Search — always visible (tabs needed for screener) */}
       {!showGuide && (
         <section className="py-8 no-print">
           <div className="max-w-6xl mx-auto px-4">
-            <SearchBar onAnalyze={handleAnalyze} loading={loading} />
+            <SearchBar onAnalyze={handleAnalyze} loading={loading} onTabChange={handleTabChange} />
           </div>
         </section>
       )}
 
+      {/* Screener tab content */}
+      {!showGuide && isScreener && (
+        <div className="max-w-6xl mx-auto px-4 pb-16">
+          <ScreenerTab onSelectSymbol={handleScreenerSelect} />
+        </div>
+      )}
+
       {/* Error */}
-      {!showGuide && error && (
+      {!showGuide && !isScreener && error && (
         <div className="max-w-6xl mx-auto px-4 mb-6">
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-fractal-red text-sm">
             {error}
@@ -190,7 +220,7 @@ export default function App() {
       )}
 
       {/* Loading state */}
-      {!showGuide && loading && !results && (
+      {!showGuide && !isScreener && loading && !results && (
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center py-20">
             <div className="inline-flex items-center gap-3 text-fractal-cyan">
@@ -206,7 +236,7 @@ export default function App() {
       )}
 
       {/* Results */}
-      {!showGuide && results && (
+      {!showGuide && !isScreener && results && (
         <div className="max-w-6xl mx-auto px-4 pb-16 space-y-6">
           {/* Directional Outlook — plain-English summary for novice investors */}
           <DirectionalOutlook horizons={results.horizonResults} symbol={symbol} />
@@ -248,7 +278,7 @@ export default function App() {
       )}
 
       {/* Empty state */}
-      {!showGuide && !loading && !results && !error && (
+      {!showGuide && !isScreener && !loading && !results && !error && (
         <div className="max-w-6xl mx-auto px-4 text-center py-20">
           <div className="text-6xl mb-4 opacity-20">◇</div>
           <h2 className="text-xl text-gray-400 font-mono">Enter a ticker to begin fractal analysis</h2>
